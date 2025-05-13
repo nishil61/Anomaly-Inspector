@@ -132,4 +132,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📧 Contact
 
-For questions or feedback, please reach out to [nishilvalia61@gmail.com](mailto:pathaknishil3642@gmail.com)
+For questions or feedback, please reach out to [pathaknishil3642@gmail.com](mailto:pathaknishil3642@gmail.com)
