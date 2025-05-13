@@ -4,6 +4,7 @@ import numpy as np
 from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import DepthwiseConv2D
 from PIL import Image
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 # Page configuration - similar to InspectorsAlly
 st.set_page_config(page_title="Anomaly Inspector", page_icon="🔍", layout="wide")
@@ -215,113 +216,33 @@ if current_tab == "Upload Image":
 
 # Live Feed Tab (Camera Input) - like InspectorsAlly
 elif current_tab == "Live Feed":
-    st.markdown("<div class='warning-msg'>Please allow access to your camera.</div>", unsafe_allow_html=True)
-    
-    # Create columns for better button placement
-    button_col1, button_col2, button_col3 = st.columns([1, 1, 1])
-    
-    # Session state to track if the camera is running
-    if 'camera_running' not in st.session_state:
-        st.session_state.camera_running = False
-    
-    # Add stylish button in the middle column
-    with button_col2:
-        if not st.session_state.camera_running:
-            button_start = st.button("▶️ Start Live Feed", 
-                          use_container_width=True, 
-                          type="primary",
-                          help="Start your webcam for real-time anomaly detection")
-            if button_start:
-                st.session_state.camera_running = True
-                st.rerun()
-        else:
-            button_stop = st.button("⏹️ Stop Live Feed", 
-                         use_container_width=True,
-                         type="secondary", 
-                         help="Stop the webcam")
-            if button_stop:
-                st.session_state.camera_running = False
-                st.rerun()
-    
-    # Create placeholders for video feed and results
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        video_placeholder = st.empty()
-    
-    with col2:
-        # Create a container for results that can be cleared
-        results_placeholder = st.container()
-        with results_placeholder:
-            results_title = st.empty()
-            prediction_text = st.empty()
-            good_container = st.empty()
-            anomaly_container = st.empty()
-            
-        # Create a separate container for info messages
-        info_container = st.container()
-    
-    # Use session state to control camera
-    if st.session_state.camera_running:
-        # Use OpenCV to capture webcam feed
-        cap = cv2.VideoCapture(0)
-        
-        # Display the title once
-        results_title.subheader("Real-time Analysis")
-        
-        # Clear the info container and add the new message
-        info_container.empty()
-        info_message = info_container.info("Click 'Stop Live Feed' button to end real-time anomaly detection")
-        
-        while st.session_state.camera_running:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to access webcam")
-                st.session_state.camera_running = False
-                break
-                
-            # Process frame for anomaly detection
-            confidence_good, confidence_anomaly, predicted_class = detect_anomaly(frame)
-            
-            # Add prediction text to frame with color-coding
-            color = (0, 255, 0) if predicted_class == "Good" else (0, 0, 255)  # Green for Good, Red for Anomaly
-            cv2.putText(frame, f"Prediction: {predicted_class}", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-            
-            # Show the frame
-            video_placeholder.image(frame, channels="BGR", caption="Live Feed", use_container_width=True)
-            
-            # Update the results in real-time
-            if predicted_class == "Good":
-                prediction_text.success("Congratulations! Your product has been classified as a 'Good' item.")
-            else:
-                prediction_text.error("We're sorry, our system has detected an anomaly.")
-            
-            # Display progress bars
-            good_container.progress(float(confidence_good)/100, text=f"Good: {confidence_good:.2f}%")
-            anomaly_container.progress(float(confidence_anomaly)/100, text=f"Anomaly: {confidence_anomaly:.2f}%")
-        
-        # Release webcam when stopped
-        cap.release()
-    else:
-        # Display a camera-off message
-        with video_placeholder:
-            st.markdown("""
-            <div style="display: flex; justify-content: center; align-items: center; height: 300px; 
-                        background-color: #f8f9fa; border-radius: 5px; margin-top: 20px;">
-                <div style="text-align: center;">
-                    <div style="font-size: 40px; margin-bottom: 10px;">📷</div>
-                    <p style="font-size: 18px; color: #6c757d;">Camera is currently off</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Clear any previous message in the info container
-        info_container.empty()
-        
-        # Display instruction when camera is off
-        with info_container:
-            st.info("Click 'Start Live Feed' button to begin real-time anomaly detection")
+    st.header("Live Feed (Browser Webcam)")
+    st.write("Start your webcam and see real-time anomaly detection. (Works in browser, even on cloud deployments!)")
+
+    class AnomalyVideoTransformer(VideoTransformerBase):
+        def transform(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            # Preprocess image for model
+            img_resized = cv2.resize(img, (224, 224))
+            img_normalized = img_resized / 255.0
+            img_expanded = np.expand_dims(img_normalized, axis=0)
+            # Predict
+            predictions = model.predict(img_expanded)[0]
+            confidence_good = predictions[0] * 100
+            confidence_anomaly = predictions[1] * 100
+            label = "Good" if confidence_good > confidence_anomaly else "Anomaly"
+            # Draw label on frame
+            color = (0, 255, 0) if label == "Good" else (0, 0, 255)
+            cv2.putText(img, f"{label}: {max(confidence_good, confidence_anomaly):.2f}%", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            return img
+
+    webrtc_streamer(
+        key="anomaly-inspector",
+        video_transformer_factory=AnomalyVideoTransformer,
+        media_stream_constraints={"video": True, "audio": False},
+        async_transform=True,
+    )
 
 # Footer
 st.markdown("---")
